@@ -5,7 +5,7 @@ pipeline {
         IMAGE_NAME = "tejasathalye/next_calculator"
         CONTAINER_NAME = "next_calc_instance"
         CONTAINER_PORT = "80"
-        HOST_PORT = "80"
+        HOST_PORT = "81"
 
         SSH_CREDENTIALS = "3tierkey"
         PROD_IP = "15.206.88.48"

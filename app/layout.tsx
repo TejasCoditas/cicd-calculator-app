@@ -5,7 +5,7 @@ import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'DEV branch Calculator',
+  title: 'Main branch DEV branch Calculator',
   description: 'Created to demonstrate CI/CD',
   generator: 'it-is-simple-calculator-devbranch',
 }

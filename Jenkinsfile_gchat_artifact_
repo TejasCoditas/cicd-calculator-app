@@ -1,0 +1,76 @@
+pipeline {
+    agent {label "bond"}
+
+    environment {
+        IMAGE_NAME = "tejasathalye/next_calculator"
+        IMAGE_TAG = "build-${env.BUILD_NUMBER}"
+        REG_CREDENTIALS = "docker_creds"
+        DEPLOY_USER = "ubuntu"
+        DEPLOY_HOSTS = "3.110.165.169"
+        SSH_KEY = "3tierkey"
+        CONTAINER_NAME = "nextjs_calculator_app"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                git url: "https://github.com/tejas-athalye-coditas/cicd-calculator-app", branch: "main"
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} -f artifact_Dockerfile ."
+            }
+        }
+
+        stage('Push to DockerHub') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: REG_CREDENTIALS, usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+                    sh "echo ${PASS} | docker login -u ${USER} --password-stdin"
+                }
+                sh "docker push ${IMAGE_NAME}:${IMAGE_TAG}"
+                sh "docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${IMAGE_NAME}:latest"
+                sh "docker push ${IMAGE_NAME}:latest"
+            }
+        }
+
+        stage('Deploy to EC2') {
+            steps {
+                script {
+                    DEPLOY_HOSTS.split(",").each { host ->
+                        sshagent([SSH_KEY]) {
+                            sh """
+                            ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${host} '
+                                docker stop ${CONTAINER_NAME} || true
+                                docker rm ${CONTAINER_NAME} || true
+                                docker pull ${IMAGE_NAME}:${IMAGE_TAG}
+                                docker run -d \
+                                    --name ${CONTAINER_NAME} \
+                                    -p 81:80 \
+                                    --restart always \
+                                    ${IMAGE_NAME}:${IMAGE_TAG}
+                            '
+                            """
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    post {
+        success {
+            googlechatnotification(
+                url: "id:gchat-jenkins-webhook",
+                message: "${env.JOB_NAME}: Build #${env.BUILD_NUMBER} → SUCCESS"
+            )
+        }
+        failure {
+            googlechatnotification(
+                url: "id:gchat-jenkins-webhook",
+                message: "${env.JOB_NAME}: Build #${env.BUILD_NUMBER} → FAILED"
+            )
+        }
+    }
+}

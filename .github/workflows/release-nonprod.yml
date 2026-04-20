@@ -1,0 +1,66 @@
+name: Release (non-production tag)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-nonprod-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    if: |
+      github.ref == 'refs/heads/dev' ||
+      github.ref == 'refs/heads/qa' ||
+      github.ref == 'refs/heads/uat'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Derive suffix and latest production version
+        id: meta
+        run: |
+          set -euo pipefail
+
+          case "${GITHUB_REF}" in
+            refs/heads/dev) suffix=dev ;;
+            refs/heads/qa) suffix=qa ;;
+            refs/heads/uat) suffix=uat ;;
+            *) echo "Unsupported branch"; exit 1 ;;
+          esac
+          echo "suffix=${suffix}" >> "${GITHUB_OUTPUT}"
+
+      - name: Create annotated non-production tag
+        env:
+          SUFFIX: ${{ steps.meta.outputs.suffix }}
+        run: |
+          set -euo pipefail
+
+          git fetch --tags --force origin
+
+          latest_prod="$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1 || true)"
+          if [ -z "${latest_prod}" ]; then
+            echo "No production tag (vX.Y.Z) found; create a production release first"; exit 1
+          fi
+
+          new_tag="${latest_prod}-${SUFFIX}"
+
+          if git rev-parse -q --verify "refs/tags/${new_tag}" >/dev/null 2>&1; then
+            echo "Tag ${new_tag} already exists locally"; exit 1
+          fi
+          if git ls-remote --tags origin "refs/tags/${new_tag}" | grep -q .; then
+            echo "Tag ${new_tag} already exists on remote"; exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git tag -a "${new_tag}" -m "Non-production release ${new_tag} (${SUFFIX})"
+          git push origin "refs/tags/${new_tag}"
+
+          echo "Created and pushed ${new_tag}"

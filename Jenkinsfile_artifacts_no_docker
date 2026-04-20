@@ -1,0 +1,79 @@
+pipeline {
+    agent { label "bond" }
+
+    environment {
+        APP_NAME = "calculator-app"
+        DEPLOY_DIR = "/var/www/calculator"
+        REMOTE_USER = "ubuntu"                   
+        REMOTE_HOST = "52.66.239.239"            
+        SSH_CRED_ID = "3tierkey"        
+        GCHAT_CRED = "gchat-jenkins-webhook"
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                echo "Cloning source code..."
+                checkout scm
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                echo "Installing dependencies..."
+                sh 'npm install'
+            }
+        }
+
+        stage('Build') {
+            steps {
+                echo "Building ${APP_NAME}..."
+                sh 'npm run build'
+            }
+        }
+
+        stage('Archive Artifacts') {
+            steps {
+                echo "Archiving build artifacts..."
+                archiveArtifacts artifacts: 'out/**', fingerprint: true
+            }
+        }
+
+        stage('Deploy to Remote Server') {
+            steps {
+                echo "Deploying ${APP_NAME} to ${REMOTE_HOST}:${DEPLOY_DIR}..."
+                sshagent([SSH_CRED_ID]) {
+                    sh """
+                        ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
+                            sudo mkdir -p ${DEPLOY_DIR} && rm -rf ${DEPLOY_DIR}/*
+                            sudo chown -R ubuntu:ubuntu ${DEPLOY_DIR}
+                        '
+                        scp -o StrictHostKeyChecking=no -r out/* ${REMOTE_USER}@${REMOTE_HOST}:${DEPLOY_DIR}/
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            googlechatnotification(
+                url: "id:${GCHAT_CRED}",
+                message: "${env.JOB_NAME}: Build #${env.BUILD_NUMBER} → SUCCESS"
+            )
+        }
+
+        failure {
+            googlechatnotification(
+                url: "id:${GCHAT_CRED}",
+                message: "${env.JOB_NAME}: Build #${env.BUILD_NUMBER} → FAILED"
+            )
+        }
+
+        always {
+            echo "Cleaning workspace..."
+            cleanWs()
+        }
+    }
+}

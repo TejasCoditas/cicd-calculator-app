@@ -1,59 +1,65 @@
-name: Deploy to GitHub Pages
+name: Deploy (tag)
 
 on:
-  push:
-    branches: [ main ]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Git tag (e.g. v1.2.3, v1.2.3-dev)'
+        required: true
+        type: string
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages
-  cancel-in-progress: true
+  group: deploy-${{ github.event.inputs.tag }}
+  cancel-in-progress: false
 
 jobs:
-  build:
+  validate:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
         with:
-          node-version: 20
-          cache: 'npm'
+          fetch-depth: 0
 
-      - name: Install dependencies
-        run: npm install
-
-      - name: Build static site
+      - name: Validate tag and target branch
         env:
-          GITHUB_PAGES: 'true'
-          # For project pages: https://<user>.github.io/<repo>
-          BASE_PATH: /${{ github.event.repository.name }}
-        run: npm run build
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
+          tag="${TAG#refs/tags/}"
+          tag="${tag#tags/}"
 
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: ./out
+          if [[ "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            branch=main
+          elif [[ "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-(dev|qa|uat)$ ]]; then
+            branch="${BASH_REMATCH[1]}"
+          else
+            echo "Invalid tag format: ${tag}"; exit 1
+          fi
 
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          git fetch --tags --force origin
 
+          if ! git ls-remote --tags origin "refs/tags/${tag}" | grep -q .; then
+            echo "Tag does not exist: ${tag}"; exit 1
+          fi
+          git fetch origin tag "${tag}"
 
+          sha="$(git rev-parse "refs/tags/${tag}^{commit}")"
+
+          git fetch origin "${branch}"
+
+          if ! git merge-base --is-ancestor "${sha}" "origin/${branch}"; then
+            echo "Tagged commit ${sha} is not on origin/${branch}"; exit 1
+          fi
+
+          echo "OK: ${tag} -> ${branch} @ ${sha}"
+
+      - name: Placeholder deploy
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          echo "Add deploy steps here for ${TAG}"

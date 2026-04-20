@@ -1,0 +1,73 @@
+pipeline {
+    agent { label "new-bond-agent" }
+
+    environment {
+        AWS_REGION = "ap-south-1"
+        IMAGE_TAG = "build-${env.BUILD_NUMBER}"
+        CONTAINER_NAME = "nextjs_calculator_app"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                git url: "https://github.com/tejas-athalye-coditas/cicd-calculator-app", branch: "main"
+            }
+        }
+
+        stage('ECR Auth & docker build & Docker Push') {
+            steps {
+                withCredentials([string(credentialsId: 'aws_ecr_repo_name', variable: 'ECR_REPO')]) {
+                    sh '''
+                        export PATH=$PATH:/usr/local/bin
+
+                        echo "Logging into ECR: $ECR_REPO"
+                        aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin $ECR_REPO
+
+                        echo "Building Docker Image"
+                        docker build -t $ECR_REPO:${IMAGE_TAG} -f Dockerfile .
+
+                        echo "Removing dangling images"
+                        docker image prune -f
+
+                        echo "Pushing image"
+                        docker push $ECR_REPO:${IMAGE_TAG}
+
+                        echo "Tagging as latest"
+                        docker tag $ECR_REPO:${IMAGE_TAG} $ECR_REPO:latest
+                        docker push $ECR_REPO:latest
+                    '''
+                }
+            }
+        }
+
+        stage('Deploy on Agent') {
+            steps {
+                withCredentials([string(credentialsId: 'aws_ecr_repo_name', variable: 'ECR_REPO')]) {
+                    sh '''
+                        echo "Deploying container"
+                        docker stop ${CONTAINER_NAME} || true
+                        docker rm ${CONTAINER_NAME} || true
+
+                        docker pull $ECR_REPO:${IMAGE_TAG}
+                        docker run -d --name ${CONTAINER_NAME} -p 81:80 --restart always $ECR_REPO:${IMAGE_TAG}
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            googlechatnotification(
+                url: "id:gchat-jenkins-webhook",
+                message: "${env.JOB_NAME}: Build #${env.BUILD_NUMBER} -> SUCCESS"
+            )
+        }
+        failure {
+            googlechatnotification(
+                url: "id:gchat-jenkins-webhook",
+                message: "${env.JOB_NAME}: Build #${env.BUILD_NUMBER} -> FAILED"
+            )
+        }
+    }
+}
