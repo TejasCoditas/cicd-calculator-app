@@ -1,10 +1,10 @@
-name: Deploy (tag)
+name: Deploy (non-production)
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Git tag (e.g. v1.2.3, v1.2.3-dev)'
+        description: 'Non-prod tag (vX.Y.Z-dev, vX.Y.Z-qa, or vX.Y.Z-uat)'
         required: true
         type: string
 
@@ -12,18 +12,18 @@ permissions:
   contents: read
 
 concurrency:
-  group: deploy-${{ github.event.inputs.tag }}
+  group: deploy-nonprod-${{ github.event.inputs.tag }}
   cancel-in-progress: false
 
 jobs:
-  validate:
+  validate-and-deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Validate tag and target branch
+      - name: Validate non-production tag
         env:
           TAG: ${{ inputs.tag }}
         run: |
@@ -32,12 +32,10 @@ jobs:
           tag="${TAG#refs/tags/}"
           tag="${tag#tags/}"
 
-          if [[ "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            branch=main
-          elif [[ "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-(dev|qa|uat)$ ]]; then
+          if [[ "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-(dev|qa|uat)$ ]]; then
             branch="${BASH_REMATCH[1]}"
           else
-            echo "Invalid tag format: ${tag}"; exit 1
+            echo "Non-production deploy requires vX.Y.Z-dev, vX.Y.Z-qa, or vX.Y.Z-uat; got: ${tag}"; exit 1
           fi
 
           git fetch --tags --force origin
@@ -62,4 +60,4 @@ jobs:
           TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          echo "Add deploy steps here for ${TAG}"
+          echo "Add non-production deploy steps for ${TAG}"
