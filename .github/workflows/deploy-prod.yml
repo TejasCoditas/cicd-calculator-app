@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  validate-and-deploy:
+  validate:
     runs-on: ubuntu-latest
     steps:
       - name: Require tag ref
@@ -54,7 +54,16 @@ jobs:
 
           echo "OK: ${tag} @ ${sha}"
 
-      - name: Placeholder deploy
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Deploy
         run: |
           set -euo pipefail
           echo "Add production deploy steps for ${GITHUB_REF_NAME}"
