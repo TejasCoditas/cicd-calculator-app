@@ -1,0 +1,61 @@
+name: Deploy (production)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Production tag (vX.Y.Z only)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-prod-${{ github.event.inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  validate-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate production tag
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          tag="${TAG#refs/tags/}"
+          tag="${tag#tags/}"
+
+          if [[ ! "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Production deploy requires vX.Y.Z (no suffix); got: ${tag}"; exit 1
+          fi
+
+          git fetch --tags --force origin
+
+          if ! git ls-remote --tags origin "refs/tags/${tag}" | grep -q .; then
+            echo "Tag does not exist: ${tag}"; exit 1
+          fi
+          git fetch origin tag "${tag}"
+
+          sha="$(git rev-parse "refs/tags/${tag}^{commit}")"
+
+          git fetch origin main
+
+          if ! git merge-base --is-ancestor "${sha}" origin/main; then
+            echo "Tagged commit ${sha} is not on origin/main"; exit 1
+          fi
+
+          echo "OK: ${tag} @ ${sha}"
+
+      - name: Placeholder deploy
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          echo "Add production deploy steps for ${TAG}"
