@@ -1,21 +1,12 @@
-/* Production-only rules (mirror .github/workflows/deploy-prod.yml):
- * - DEPLOY_TAG is required (vMAJOR.MINOR.PATCH). No checkout until the string is valid — no branch fallback.
- * - After checkout, Verify must pass or the pipeline FAILS (no silent skip).
- * - Tag commit must be on origin/main.
- * Integrating: keep skipDefaultCheckout; add real steps in Deploy; credentials/RBAC at the job.
- * Job Script Path: jenkinsfile.github
- */
+/* Prod deploy: required DEPLOY_TAG vMAJOR.MINOR.PATCH, checkout that tag only, commit must be on origin/main.
+ * skipDefaultCheckout = single clone. Script path: jenkinsfile.github */
 
 pipeline {
   agent any
 
   parameters {
-    string(
-      name: 'DEPLOY_TAG',
-      defaultValue: '',
-      trim: true,
-      description: 'Required. Production tag only, e.g. v1.0.0 (not v1.0.0-dev).'
-    )
+    string(name: 'DEPLOY_TAG', defaultValue: '', trim: true,
+      description: 'Required. e.g. v1.0.0 (not v1.0.0-dev).')
   }
 
   options {
@@ -25,55 +16,32 @@ pipeline {
   }
 
   stages {
-    stage('Checkout') {
+    stage('Checkout and verify') {
       steps {
         script {
-          echo "DEPLOY_TAG parameter: '${params.DEPLOY_TAG?.trim() ?: ''}'"
+          echo "DEPLOY_TAG: '${params.DEPLOY_TAG?.trim() ?: ''}'"
           def t = params.DEPLOY_TAG?.trim()
-          if (!t) {
-            error("Not the right version: DEPLOY_TAG is required (e.g. v1.0.0). No checkout performed.")
-          }
+          if (!t) error("Not the right version: DEPLOY_TAG is required (e.g. v1.0.0). No checkout performed.")
           if (!(t ==~ /^v[0-9]+\.[0-9]+\.[0-9]+$/)) {
             error("Not the right version: DEPLOY_TAG must be vMAJOR.MINOR.PATCH (digits only, no suffix). Got: ${t}")
           }
           checkout([
             $class: 'GitSCM',
             branches: [[name: "refs/tags/${t}"]],
-            extensions: [
-              [$class: 'CloneOption', depth: 0, noTags: false, shallow: false, honorRefspec: false]
-            ],
+            extensions: [[$class: 'CloneOption', depth: 0, noTags: false, shallow: false, honorRefspec: false]],
             userRemoteConfigs: scm.userRemoteConfigs
           ])
           echo "Checked out refs/tags/${t}"
         }
-      }
-    }
-
-    stage('Verify') {
-      steps {
         sh '''#!/usr/bin/env bash
 set -euo pipefail
-
-TAG="$(git describe --tags --exact-match 2>/dev/null || true)"
-echo "----- Resolved git tag: ${TAG:-<none>} -----"
-if [ -z "${TAG}" ]; then
-  echo "[ERROR] Not the right version: checkout is not exactly on a tag (internal error after tag checkout)."
-  exit 1
-fi
-
-if [[ ! "${TAG}" =~ ^v[0-9]+\\.[0-9]+\\.[0-9]+$ ]]; then
-  echo "[ERROR] Not the right version: expected vMAJOR.MINOR.PATCH (digits only). Got: ${TAG}"
-  exit 1
-fi
-
+T="$(git describe --tags --exact-match 2>/dev/null || true)"
+echo "----- Resolved tag: ${T:-<none>} -----"
+[ -n "$T" ] || { echo "[ERROR] Not the right version: not exactly on a tag after checkout."; exit 1; }
+[[ "$T" =~ ^v[0-9]+\\.[0-9]+\\.[0-9]+$ ]] || { echo "[ERROR] Not the right version: expected vMAJOR.MINOR.PATCH. Got: $T"; exit 1; }
 git fetch origin main
-if ! git merge-base --is-ancestor HEAD origin/main; then
-  echo "[ERROR] Not the right version: tag ${TAG} is not on origin/main — production deploy blocked."
-  exit 1
-fi
-
-echo "[OK] Verified ${TAG} for production deploy."
-echo "----- Production tag (verified, deploy allowed): ${TAG} -----"
+git merge-base --is-ancestor HEAD origin/main || { echo "[ERROR] Not the right version: tag $T not on origin/main."; exit 1; }
+echo "[OK] Verified $T — deploy allowed."
 '''
       }
     }
@@ -82,9 +50,9 @@ echo "----- Production tag (verified, deploy allowed): ${TAG} -----"
       steps {
         sh '''#!/usr/bin/env bash
 set -euo pipefail
-TAG="$(git describe --tags --exact-match)"
-echo "----- Deploy stage — production tag: ${TAG} -----"
-echo "Add production deploy steps for ${TAG}"
+T="$(git describe --tags --exact-match)"
+echo "----- Deploy: $T -----"
+echo "Add production deploy steps for $T"
 '''
       }
     }
