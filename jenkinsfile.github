@@ -25,6 +25,7 @@ pipeline {
     stage('Checkout') {
       steps {
         script {
+          echo "DEPLOY_TAG parameter: '${params.DEPLOY_TAG?.trim() ?: ''}'"
           def t = params.DEPLOY_TAG?.trim()
           if (t) {
             if (!(t ==~ /^v[0-9]+\.[0-9]+\.[0-9]+$/)) {
@@ -55,6 +56,7 @@ OUT="${WORKSPACE}/.jenkins-prod-should-deploy"
 echo "false" > "${OUT}"
 
 TAG="$(git describe --tags --exact-match 2>/dev/null || true)"
+echo "----- Resolved git tag: ${TAG:-<none>} -----"
 if [ -z "${TAG}" ]; then
   echo "[WARN] Production deploy runs only from a version tag (vMAJOR.MINOR.PATCH)."
   echo "[WARN] Set build parameter DEPLOY_TAG (e.g. v1.0.0) or point the job at a tag ref."
@@ -74,6 +76,7 @@ fi
 
 echo "true" > "${OUT}"
 echo "[OK] Verified ${TAG} for production deploy."
+echo "----- Production tag (verified, deploy allowed): ${TAG} -----"
 '''
       }
     }
@@ -89,6 +92,7 @@ echo "[OK] Verified ${TAG} for production deploy."
         sh '''#!/usr/bin/env bash
 set -euo pipefail
 TAG="$(git describe --tags --exact-match)"
+echo "----- Deploy stage — production tag: ${TAG} -----"
 echo "Add production deploy steps for ${TAG}"
 '''
       }
