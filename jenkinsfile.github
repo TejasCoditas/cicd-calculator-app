@@ -1,11 +1,20 @@
 /* Production-only. Mirror .github/workflows/deploy-prod.yml:
- * - Deploy only when the workspace is checked out exactly on tag vMAJOR.MINOR.PATCH (digits).
- * - Tagged commit must be an ancestor of origin/main.
- * Configure the job to use this file: Script Path = jenkinsfile.github
+ * - Tag must be vMAJOR.MINOR.PATCH (digits only); commit must be on origin/main.
+ * - Set DEPLOY_TAG when building (e.g. v1.2.3), or leave empty to use the SCM ref (must be exactly on a tag).
+ * Job Script Path: jenkinsfile.github
  */
 
 pipeline {
   agent any
+
+  parameters {
+    string(
+      name: 'DEPLOY_TAG',
+      defaultValue: '',
+      trim: true,
+      description: 'Production tag to deploy (e.g. v1.0.0). Leave empty only if the job SCM checkout is already exactly on that tag.'
+    )
+  }
 
   options {
     timestamps()
@@ -13,6 +22,31 @@ pipeline {
   }
 
   stages {
+    stage('Checkout') {
+      steps {
+        script {
+          def t = params.DEPLOY_TAG?.trim()
+          if (t) {
+            if (!(t ==~ /^v[0-9]+\.[0-9]+\.[0-9]+$/)) {
+              error("DEPLOY_TAG must look like vMAJOR.MINOR.PATCH (digits only). Got: ${t}")
+            }
+            checkout([
+              $class: 'GitSCM',
+              branches: [[name: "refs/tags/${t}"]],
+              extensions: [
+                [$class: 'CloneOption', depth: 0, noTags: false, shallow: false, honorRefspec: false]
+              ],
+              userRemoteConfigs: scm.userRemoteConfigs
+            ])
+            echo "Checked out refs/tags/${t}"
+          } else {
+            checkout scm
+            echo 'No DEPLOY_TAG: using job SCM checkout (must be exactly on a tag for deploy to proceed).'
+          }
+        }
+      }
+    }
+
     stage('Verify') {
       steps {
         sh '''#!/usr/bin/env bash
@@ -22,7 +56,8 @@ echo "false" > "${OUT}"
 
 TAG="$(git describe --tags --exact-match 2>/dev/null || true)"
 if [ -z "${TAG}" ]; then
-  echo "[WARN] Production deploy runs only from a version tag (vMAJOR.MINOR.PATCH); checkout is not exactly on a tag."
+  echo "[WARN] Production deploy runs only from a version tag (vMAJOR.MINOR.PATCH)."
+  echo "[WARN] Set build parameter DEPLOY_TAG (e.g. v1.0.0) or point the job at a tag ref."
   exit 0
 fi
 
