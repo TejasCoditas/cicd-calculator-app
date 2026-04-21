@@ -1,10 +1,8 @@
 /* Production-only rules (mirror .github/workflows/deploy-prod.yml):
- * - Deploy only from tag vMAJOR.MINOR.PATCH whose commit is on origin/main.
- * - DEPLOY_TAG parameter checks out that tag; leave empty only if SCM ref is already exactly on such a tag.
- * - If DEPLOY_TAG is set and rules fail → build FAILS. If empty and not on a tag → SUCCESS, deploy skipped.
- *
- * Integrating into other pipelines: copy these stages or load this file; keep skipDefaultCheckout + single Checkout;
- * add real steps in Deploy; credentials/RBAC stay at the job.
+ * - DEPLOY_TAG is required (vMAJOR.MINOR.PATCH). No checkout until the string is valid — no branch fallback.
+ * - After checkout, Verify must pass or the pipeline FAILS (no silent skip).
+ * - Tag commit must be on origin/main.
+ * Integrating: keep skipDefaultCheckout; add real steps in Deploy; credentials/RBAC at the job.
  * Job Script Path: jenkinsfile.github
  */
 
@@ -16,7 +14,7 @@ pipeline {
       name: 'DEPLOY_TAG',
       defaultValue: '',
       trim: true,
-      description: 'Production tag to deploy (e.g. v1.0.0). Leave empty only if the job SCM ref is already exactly on that tag.'
+      description: 'Required. Production tag only, e.g. v1.0.0 (not v1.0.0-dev).'
     )
   }
 
@@ -32,67 +30,48 @@ pipeline {
         script {
           echo "DEPLOY_TAG parameter: '${params.DEPLOY_TAG?.trim() ?: ''}'"
           def t = params.DEPLOY_TAG?.trim()
-          if (t) {
-            if (!(t ==~ /^v[0-9]+\.[0-9]+\.[0-9]+$/)) {
-              error("DEPLOY_TAG must look like vMAJOR.MINOR.PATCH (digits only). Got: ${t}")
-            }
-            checkout([
-              $class: 'GitSCM',
-              branches: [[name: "refs/tags/${t}"]],
-              extensions: [
-                [$class: 'CloneOption', depth: 0, noTags: false, shallow: false, honorRefspec: false]
-              ],
-              userRemoteConfigs: scm.userRemoteConfigs
-            ])
-            echo "Checked out refs/tags/${t}"
-          } else {
-            checkout scm
-            echo 'No DEPLOY_TAG: using job SCM checkout (must be exactly on a tag for deploy to proceed).'
+          if (!t) {
+            error("Not the right version: DEPLOY_TAG is required (e.g. v1.0.0). No checkout performed.")
           }
+          if (!(t ==~ /^v[0-9]+\.[0-9]+\.[0-9]+$/)) {
+            error("Not the right version: DEPLOY_TAG must be vMAJOR.MINOR.PATCH (digits only, no suffix). Got: ${t}")
+          }
+          checkout([
+            $class: 'GitSCM',
+            branches: [[name: "refs/tags/${t}"]],
+            extensions: [
+              [$class: 'CloneOption', depth: 0, noTags: false, shallow: false, honorRefspec: false]
+            ],
+            userRemoteConfigs: scm.userRemoteConfigs
+          ])
+          echo "Checked out refs/tags/${t}"
         }
       }
     }
 
     stage('Verify') {
-      environment {
-        REQUESTED_DEPLOY_TAG = "${params.DEPLOY_TAG?.trim() ?: ''}"
-      }
       steps {
         sh '''#!/usr/bin/env bash
 set -euo pipefail
-OUT="${WORKSPACE}/.jenkins-prod-should-deploy"
-echo "false" > "${OUT}"
-
-fail_if_requested() {
-  if [ -n "${REQUESTED_DEPLOY_TAG}" ]; then
-    echo "[ERROR] DEPLOY_TAG was set (${REQUESTED_DEPLOY_TAG}) but production rules failed — failing build."
-    exit 1
-  fi
-}
 
 TAG="$(git describe --tags --exact-match 2>/dev/null || true)"
 echo "----- Resolved git tag: ${TAG:-<none>} -----"
 if [ -z "${TAG}" ]; then
-  echo "[WARN] Production deploy runs only from a version tag (vMAJOR.MINOR.PATCH)."
-  echo "[WARN] Set DEPLOY_TAG (e.g. v1.0.0) or point the job SCM ref at a tag."
-  fail_if_requested
-  exit 0
+  echo "[ERROR] Not the right version: checkout is not exactly on a tag (internal error after tag checkout)."
+  exit 1
 fi
 
 if [[ ! "${TAG}" =~ ^v[0-9]+\\.[0-9]+\\.[0-9]+$ ]]; then
-  echo "[WARN] Production tag must be vMAJOR.MINOR.PATCH (digits only, e.g. v1.0.0). Got: ${TAG}"
-  fail_if_requested
-  exit 0
+  echo "[ERROR] Not the right version: expected vMAJOR.MINOR.PATCH (digits only). Got: ${TAG}"
+  exit 1
 fi
 
 git fetch origin main
 if ! git merge-base --is-ancestor HEAD origin/main; then
-  echo "[WARN] Tag ${TAG} does not point to a commit on main — skipping deployment."
-  fail_if_requested
-  exit 0
+  echo "[ERROR] Not the right version: tag ${TAG} is not on origin/main — production deploy blocked."
+  exit 1
 fi
 
-echo "true" > "${OUT}"
 echo "[OK] Verified ${TAG} for production deploy."
 echo "----- Production tag (verified, deploy allowed): ${TAG} -----"
 '''
@@ -100,12 +79,6 @@ echo "----- Production tag (verified, deploy allowed): ${TAG} -----"
     }
 
     stage('Deploy') {
-      when {
-        expression {
-          return fileExists('.jenkins-prod-should-deploy') &&
-            readFile('.jenkins-prod-should-deploy').trim() == 'true'
-        }
-      }
       steps {
         sh '''#!/usr/bin/env bash
 set -euo pipefail
