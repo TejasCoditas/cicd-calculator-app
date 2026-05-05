@@ -16,10 +16,18 @@ Rename the PR title so it matches conventional commit format, for example:
 |--------|----------------|
 | New feature (minor bump) | `feat: add invoice export` |
 | Bug fix (patch bump) | `fix: correct tax rounding` |
-| Breaking change (major bump) | `feat!: remove legacy API` or put `BREAKING CHANGE:` in the PR body |
+| Breaking change (major bump) | `feat!: remove legacy API` (best for squash title) |
 | Docs / chore only (often no release) | `docs: update README` — may not trigger a version bump |
 
 Use types your team agrees on (`feat`, `fix`, `perf`, `refactor`, etc.). **Avoid merging** with vague titles like `Update stuff` — semantic-release may not produce a new tag, or the wrong bump may be inferred.
+
+### Breaking changes (major version)
+
+The analyzer uses the **Conventional Commits** preset so `feat!:` / `fix!:` in the **subject** counts as a breaking change.
+
+- **Do not** make the squash message **only** `BREAKING CHANGE: …` — that token is a **footer**, not a header line, so the commit is treated as non-conventional and **no release** is produced.
+- Prefer PR title: `feat!: what changed` (or `fix!: …`).
+- Or: first line `feat: what changed` and a later line (or PR body, if squash includes it) with `BREAKING CHANGE: why it is breaking`.
 
 ### 3. Optional safety net
 
@@ -39,7 +47,7 @@ If you later configure semantic-release to use a **PAT** so tag pushes trigger w
 ## Troubleshooting
 
 - **No new tag after merge**: Usually only `feat`, `fix`, `perf`, `refactor`, and similar types trigger releases; pure `chore:` / `docs:` may not. Check the Release workflow logs on `main`.
-- **Wrong version bump**: Fix comes from the **squashed commit message** (your PR title). Use `feat!:` or `BREAKING CHANGE:` for majors.
+- **Wrong version bump**: Fix comes from the **squashed commit message** (your PR title and optional body). Use `feat!:` / `fix!:` in the title, or `BREAKING CHANGE:` in the message **after** a normal `type: subject` line — not as the only line.
 - **Manual run did not deploy**: Confirm **Use workflow from** is a **`vMAJOR.MINOR.PATCH` tag**, not a branch.
 
 ## Repo settings to confirm with maintainers

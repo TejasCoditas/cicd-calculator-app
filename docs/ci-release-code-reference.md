@@ -9,6 +9,7 @@ Add or align the following in the repository. Production branch is assumed to be
   "@semantic-release/commit-analyzer": "^13.0.0",
   "@semantic-release/github": "^11.0.0",
   "@semantic-release/release-notes-generator": "^14.0.0",
+  "conventional-changelog-conventionalcommits": "^9.0.0",
   "semantic-release": "^24.0.0"
 }
 ```
@@ -25,8 +26,18 @@ npm install
 {
   "branches": ["main"],
   "plugins": [
-    "@semantic-release/commit-analyzer",
-    "@semantic-release/release-notes-generator",
+    [
+      "@semantic-release/commit-analyzer",
+      {
+        "preset": "conventionalcommits"
+      }
+    ],
+    [
+      "@semantic-release/release-notes-generator",
+      {
+        "preset": "conventionalcommits"
+      }
+    ],
     [
       "@semantic-release/github",
       {

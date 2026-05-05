@@ -65,6 +65,7 @@
     "@semantic-release/commit-analyzer": "^13.0.0",
     "@semantic-release/github": "^11.0.0",
     "@semantic-release/release-notes-generator": "^14.0.0",
+    "conventional-changelog-conventionalcommits": "^9.0.0",
     "semantic-release": "^24.0.0",
     "@tailwindcss/postcss": "^4.1.9",
     "@types/node": "^22",
