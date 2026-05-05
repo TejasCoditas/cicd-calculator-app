@@ -94,33 +94,6 @@ jobs:
         run: npx semantic-release
 ```
 
-## `.github/workflows/lint-pr-title.yml`
-
-```yaml
-name: Lint PR title
-
-on:
-  pull_request:
-    types:
-      - opened
-      - edited
-      - synchronize
-      - reopened
-
-permissions:
-  pull-requests: read
-  statuses: write
-
-jobs:
-  validate:
-    name: Conventional PR title
-    runs-on: ubuntu-latest
-    steps:
-      - uses: amannn/action-semantic-pull-request@v5
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-```
-
 ## `.github/workflows/deploy-prod.yml`
 
 ```yaml

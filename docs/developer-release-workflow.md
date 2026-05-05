@@ -2,50 +2,32 @@
 
 This repository deploys production from **semver tags** (`vMAJOR.MINOR.PATCH`). Tags are created automatically when changes land on `main`, using **semantic-release** and [Conventional Commits](https://www.conventionalcommits.org/).
 
+**What semantic-release reads:** the **actual commit(s)** on `main` after merge — for squash merge, that is whatever appears in the **Squash and merge** commit message box in the GitHub UI (first line = subject), not the PR title unless you leave the default unchanged.
+
 ## What you need to do
 
 ### 1. Use squash merge into `main`
 
-Merge your PR with **squash and merge** (team default). The squash commit message should follow conventions — usually it is taken from the **PR title**.
+Merge with **Squash and merge**. Before you confirm, edit the **commit message** so the **first line** follows conventional commit format (see below). Reviewers approve the PR; they do **not** automatically enforce this message — whoever merges is responsible for the final text.
 
-### 2. Set the PR title before merging
+### 2. Conventional first line (subject) examples
 
-Rename the PR title so it matches conventional commit format, for example:
-
-| Intent | Example title |
-|--------|----------------|
+| Intent | Example first line |
+|--------|---------------------|
 | New feature (minor bump) | `feat: add invoice export` |
 | Bug fix (patch bump) | `fix: correct tax rounding` |
-| Breaking change (major bump) | `feat!: remove legacy API` (best for squash title) |
+| Breaking change (major bump) | `feat!: remove legacy API` |
 | Docs / chore only (often no release) | `docs: update README` — may not trigger a version bump |
 
-Use types your team agrees on (`feat`, `fix`, `perf`, `refactor`, etc.). **Avoid merging** with vague titles like `Update stuff` — semantic-release may not produce a new tag, or the wrong bump may be inferred.
+Use types your team agrees on (`feat`, `fix`, `perf`, `refactor`, etc.). **Avoid** vague subjects like `Update stuff` — semantic-release may not produce a new tag, or the wrong bump may be inferred.
 
 ### Breaking changes (major version)
 
 The analyzer uses the **Conventional Commits** preset so `feat!:` / `fix!:` in the **subject** counts as a breaking change.
 
-- **Do not** make the squash message **only** `BREAKING CHANGE: …` — that token is a **footer**, not a header line, so the commit is treated as non-conventional and **no release** is produced.
-- Prefer PR title: `feat!: what changed` (or `fix!: …`).
-- Or: first line `feat: what changed` and a later line (or PR body, if squash includes it) with `BREAKING CHANGE: why it is breaking`.
-
-### 3. PR title check (lint)
-
-The workflow [`.github/workflows/lint-pr-title.yml`](.github/workflows/lint-pr-title.yml) validates the PR title. Fixing a failing run still requires an admin step below, or GitHub will let you merge anyway.
-
-**Block the merge button until this check passes**
-
-GitHub does not enforce failed workflows by default. A repo admin must require the status check on the target branch (for example `main`):
-
-1. **Settings** → **Branches** → **Add branch protection rule** (or **Rules** → **Rulesets** if your org uses rulesets).
-2. Enable **Require status checks to pass before merging**.
-3. Add this check (name is `workflow name` / `job name`):
-   - **`Lint PR title / Conventional PR title`**
-4. Save. After the next PR run, failed lint runs should show merge as blocked until the title is fixed.
-
-If that exact label is not listed yet, open a PR so the workflow runs once, then use the **check name** shown on the PR (often `Lint PR title / Conventional PR title`).
-
-Optional: disable **Allow administrators to bypass** if you want the rule to apply to admins too.
+- **Do not** use a squash message whose **only** line is `BREAKING CHANGE: …` — that belongs in the **body** after a blank line, under a normal header such as `feat: what changed`.
+- Prefer subject: `feat!: what changed` (or `fix!: …`).
+- Or subject `feat: what changed` and in the **extended description** (body): `BREAKING CHANGE: why it is breaking`.
 
 ## What happens in CI
 
@@ -61,11 +43,10 @@ If you later configure semantic-release to use a **PAT** so tag pushes trigger w
 ## Troubleshooting
 
 - **No new tag after merge**: Usually only `feat`, `fix`, `perf`, `refactor`, and similar types trigger releases; pure `chore:` / `docs:` may not. Check the Release workflow logs on `main`.
-- **Wrong version bump**: Fix comes from the **squashed commit message** (your PR title and optional body). Use `feat!:` / `fix!:` in the title, or `BREAKING CHANGE:` in the message **after** a normal `type: subject` line — not as the only line.
+- **Wrong version bump**: Fix comes from the **squashed commit message** you confirmed in GitHub. Use `feat!:` / `fix!:` in the subject, or `BREAKING CHANGE:` in the body **after** a normal `type: subject` line — not as the only line.
 - **Manual run did not deploy**: Confirm **Use workflow from** is a **`vMAJOR.MINOR.PATCH` tag**, not a branch.
 
 ## Repo settings to confirm with maintainers
 
-- Default merge style: **squash merge**, with squash message derived from **PR title** (GitHub repository setting).
-- Branch protection: pull requests required into `main`; no direct pushes if that is policy.
-- **Required status check**: `Lint PR title / Conventional PR title` so bad titles cannot be merged.
+- Default merge style: **squash merge**; optionally **default squash message from PR title** to reduce editing, but the merger should still verify the final message.
+- Branch protection: pull requests and **reviewers** required into `main` where policy applies; restrict direct pushes if that is policy.
