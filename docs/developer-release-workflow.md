@@ -29,9 +29,23 @@ The analyzer uses the **Conventional Commits** preset so `feat!:` / `fix!:` in t
 - Prefer PR title: `feat!: what changed` (or `fix!: …`).
 - Or: first line `feat: what changed` and a later line (or PR body, if squash includes it) with `BREAKING CHANGE: why it is breaking`.
 
-### 3. Optional safety net
+### 3. PR title check (lint)
 
-A workflow (`lint-pr-title`) validates the PR title against conventional commit rules. If it fails, adjust the title and push again.
+The workflow [`.github/workflows/lint-pr-title.yml`](.github/workflows/lint-pr-title.yml) validates the PR title. Fixing a failing run still requires an admin step below, or GitHub will let you merge anyway.
+
+**Block the merge button until this check passes**
+
+GitHub does not enforce failed workflows by default. A repo admin must require the status check on the target branch (for example `main`):
+
+1. **Settings** → **Branches** → **Add branch protection rule** (or **Rules** → **Rulesets** if your org uses rulesets).
+2. Enable **Require status checks to pass before merging**.
+3. Add this check (name is `workflow name` / `job name`):
+   - **`Lint PR title / Conventional PR title`**
+4. Save. After the next PR run, failed lint runs should show merge as blocked until the title is fixed.
+
+If that exact label is not listed yet, open a PR so the workflow runs once, then use the **check name** shown on the PR (often `Lint PR title / Conventional PR title`).
+
+Optional: disable **Allow administrators to bypass** if you want the rule to apply to admins too.
 
 ## What happens in CI
 
@@ -54,3 +68,4 @@ If you later configure semantic-release to use a **PAT** so tag pushes trigger w
 
 - Default merge style: **squash merge**, with squash message derived from **PR title** (GitHub repository setting).
 - Branch protection: pull requests required into `main`; no direct pushes if that is policy.
+- **Required status check**: `Lint PR title / Conventional PR title` so bad titles cannot be merged.

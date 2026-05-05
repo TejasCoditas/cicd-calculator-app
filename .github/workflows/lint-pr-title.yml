@@ -1,3 +1,5 @@
+# Merge is only blocked when this check is required in branch protection / rulesets.
+# Add required status: "Lint PR title / Conventional PR title" (workflow name / job name).
 name: Lint PR title
 
 on:
