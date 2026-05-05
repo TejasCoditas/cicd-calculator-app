@@ -1,3 +1,129 @@
+# CI release and prod deploy — code reference
+
+Add or align the following in the repository. Production branch is assumed to be `main`.
+
+## `package.json` (`devDependencies`)
+
+```json
+{
+  "@semantic-release/commit-analyzer": "^13.0.0",
+  "@semantic-release/github": "^11.0.0",
+  "@semantic-release/release-notes-generator": "^14.0.0",
+  "conventional-changelog-conventionalcommits": "^9.0.0",
+  "semantic-release": "^24.0.0"
+}
+```
+
+Then run:
+
+```bash
+npm install
+```
+
+## `.releaserc.json` (repository root)
+
+```json
+{
+  "branches": ["main"],
+  "plugins": [
+    [
+      "@semantic-release/commit-analyzer",
+      {
+        "preset": "conventionalcommits"
+      }
+    ],
+    [
+      "@semantic-release/release-notes-generator",
+      {
+        "preset": "conventionalcommits"
+      }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "successComment": false,
+        "releasedLabels": false
+      }
+    ]
+  ]
+}
+```
+
+## `.github/workflows/release.yml`
+
+```yaml
+name: Release (semantic version tag)
+
+run-name: Release on main ${{ github.sha }}
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Tag release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Semantic release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx semantic-release
+```
+
+## `.github/workflows/lint-pr-title.yml`
+
+```yaml
+name: Lint PR title
+
+on:
+  pull_request:
+    types:
+      - opened
+      - edited
+      - synchronize
+      - reopened
+
+permissions:
+  pull-requests: read
+  statuses: write
+
+jobs:
+  validate:
+    name: Conventional PR title
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+## `.github/workflows/deploy-prod.yml`
+
+```yaml
 name: Deploy (production)
 
 # - Tag push: deploy that tag (e.g. tag pushed with a PAT or outside Actions).
@@ -126,3 +252,8 @@ jobs:
         run: |
           set -euo pipefail
           echo "Add production deploy steps for ${DEPLOY_TAG}"
+```
+
+`deploy-prod.yml` `workflow_run.workflows` must match `release.yml` top-level `name` exactly (`Release (semantic version tag)`).
+
+Replace the `Deploy` step with real production deploy commands.
