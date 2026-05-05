@@ -28,14 +28,16 @@ A workflow (`lint-pr-title`) validates the PR title against conventional commit 
 ## What happens in CI
 
 1. **Merge to `main`** runs the **Release** workflow. It analyzes commits since the last tag and may create a new **Git tag** and GitHub Release.
-2. **Pushing a matching tag** runs **Deploy (production)** for that version.
-3. **Manual redeploy**: use **Actions → Deploy (production) → Run workflow**. Leave **tag** empty to redeploy the **latest** `v*` tag on `main`, or enter a specific tag (e.g. `v1.2.3`).
+2. **Pushing a matching tag** runs **Deploy (production)** for that version automatically.
+3. **Manual redeploy**: open **Actions → Deploy (production) → Run workflow**. Under **Use workflow from**, switch the ref control from the default branch to **Tags** and pick the version (e.g. `v1.2.3`). The run must use a **tag ref**, not `main`, or deployment is skipped.
+
+**Note:** GitHub runs the workflow file **as it exists on that tag’s commit**. If deploy logic changed later on `main`, redeploying an old tag still uses the older workflow definition.
 
 ## Troubleshooting
 
 - **No new tag after merge**: Usually only `feat`, `fix`, `perf`, `refactor`, and similar types trigger releases; pure `chore:` / `docs:` may not. Check the Release workflow logs on `main`.
 - **Wrong version bump**: Fix comes from the **squashed commit message** (your PR title). Use `feat!:` or `BREAKING CHANGE:` for majors.
-- **Redeploy without a new merge**: Run **Deploy (production)** manually with an empty tag (latest on `main`) or a specific tag.
+- **Manual run did not deploy**: Confirm **Use workflow from** is a **`vMAJOR.MINOR.PATCH` tag**, not a branch.
 
 ## Repo settings to confirm with maintainers
 
