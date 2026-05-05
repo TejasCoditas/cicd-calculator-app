@@ -1,6 +1,8 @@
 # Developer guide: production releases and versioning
 
-This repository deploys production from **semver tags** (`vMAJOR.MINOR.PATCH`). Tags are created automatically when changes land on `main`, using **semantic-release** and [Conventional Commits](https://www.conventionalcommits.org/).
+This repository deploys production from **semver tags** (`vMAJOR.MINOR.PATCH`). Tags are created automatically when changes land on `main`, using **semantic-release** and [Conventional Commits](https://www.conventionalcommits.org/). **No GitHub Releases** are created — only **git tags** (see the repository **Tags** page).
+
+**What semantic-release reads:** the **actual commit(s)** on `main` after merge — for squash merge, that is whatever appears in the **Squash and merge** commit message box in the GitHub UI (first line = subject), not the PR title unless you leave the default unchanged.
 
 **What semantic-release reads:** the **actual commit(s)** on `main` after merge — for squash merge, that is whatever appears in the **Squash and merge** commit message box in the GitHub UI (first line = subject), not the PR title unless you leave the default unchanged.
 
@@ -31,8 +33,8 @@ The analyzer uses the **Conventional Commits** preset so `feat!:` / `fix!:` in t
 
 ## What happens in CI
 
-1. **Merge to `main`** runs the **Release** workflow. It analyzes commits since the last tag and may create a new **Git tag** and GitHub Release.
-2. **Deploy (production)** runs automatically **after Release completes successfully**, using the semver tag on that release commit. This is required because tag pushes made with the default `GITHUB_TOKEN` do **not** trigger other workflows on GitHub.
+1. **Merge to `main`** runs the **Release** workflow. It analyzes commits since the last tag and may create and push a new **git tag** (`vMAJOR.MINOR.PATCH`) only.
+2. **Deploy (production)** runs automatically **after Release completes successfully**, finding the tag on the **same commit** as the merge that triggered Release (`workflow_run` + `--points-at`). Tag pushes made with the default `GITHUB_TOKEN` do **not** trigger other workflows; `workflow_run` handles deploy.
 3. **Pushing a matching tag** in other ways (for example a personal access token or manual `git push`) can still trigger **Deploy (production)** via the tag `push` trigger.
 4. **Manual redeploy**: open **Actions → Deploy (production) → Run workflow**. Under **Use workflow from**, switch the ref control from the default branch to **Tags** and pick the version (e.g. `v1.2.3`). The run must use a **tag ref**, not `main`, or deployment is skipped.
 
