@@ -9,12 +9,13 @@ This document summarizes what the repository automates today, what it assumes, a
 | Area | Status |
 |------|--------|
 | **Semver tagging from conventional commits** | Implemented (`semantic-release` + Conventional Commits preset on `main`). |
-| **Prod deploy after a new version tag** | Implemented (deploy chained after Release via `workflow_run`; tag `push` covers PAT/manual tags). |
+| **GitHub Releases** | **Not** used — only **git tags** are pushed (no `POST /releases`, no release notes UI). |
+| **Prod deploy after a new version tag** | Implemented (`workflow_run` after Release finds tag `--points-at` merge commit; tag `push` covers PAT/manual tags). |
 | **Automated PR title / commit-message lint** | **Not** used; **squash commit message** (merge dialog) is the release input — discipline is human (merger + reviewers for code, not for message format). |
 | **Blocking direct pushes to `main`** | **Not** enforced by these workflows — requires **branch protection / rulesets**. |
 | **Real prod deploy commands** | Placeholder in workflow; replace with your platform (K8s, VM, PaaS, etc.). |
 
-**Bottom line:** The **automation path** is coherent and industry-standard. **Governance** (protected `main`, required reviews) limits who merges and what is reviewed; **conventional squash messages** are still a **process** responsibility of the person confirming the merge in GitHub.
+**Bottom line:** The **automation path** is coherent: tags on `main` drive production deploys. **Governance** (protected `main`, required reviews) limits who merges; **conventional squash messages** remain a **process** responsibility.
 
 ---
 
@@ -25,7 +26,7 @@ flowchart TD
   pr[PR and code review]
   merge[Squash merge with conventional message]
   rel[Release workflow semantic-release]
-  tag[Tag vMAJOR.MINOR.PATCH and GitHub Release]
+  tag[Git tag vMAJOR.MINOR.PATCH only]
   dep[Deploy production workflow]
   prod[Production environment]
 
@@ -36,10 +37,10 @@ flowchart TD
   dep --> prod
 ```
 
-1. Developers open PRs; **reviewers** approve per branch protection (code and product judgment — not automated commit-format checks).
+1. Developers open PRs; **reviewers** approve per branch protection.
 2. On **Squash and merge**, the merger sets the **commit message** so the first line follows [Conventional Commits](https://www.conventionalcommits.org/); that text is what **semantic-release** analyzes on `main`.
-3. After merge to **`main`**, **Release** runs: analyzes all commits since the last tag, applies the **strongest** applicable semver bump, publishes a **Git tag** and **GitHub Release** when there are releasable changes.
-4. **Deploy (production)** runs when Release completes successfully (`workflow_run`), resolving the new tag on the release commit — this avoids relying on tag `push` events from `GITHUB_TOKEN`, which GitHub does not forward to other workflows.
+3. After merge to **`main`**, **Release** runs: analyzes all commits since the last tag, applies the **strongest** applicable semver bump, creates and pushes a **git tag** only (semantic-release core — no GitHub Release, no changelog commit).
+4. **Deploy (production)** runs when Release completes successfully (`workflow_run`), resolving the tag on the merge commit — avoids relying on tag `push` events from `GITHUB_TOKEN`, which GitHub does not forward to other workflows.
 5. Optional: manual redeploy by running Deploy with **Use workflow from** set to an existing **`v*.*.*`** tag.
 
 ---
@@ -48,21 +49,21 @@ flowchart TD
 
 | Artifact | Role |
 |----------|------|
-| [`.releaserc.json`](../.releaserc.json) | `main` only; Conventional Commits preset for analyzer and release notes; GitHub plugin for tag/release. |
-| [`release.yml`](../.github/workflows/release.yml) | Trigger: `push` to `main`. Runs `npm ci` and `npx semantic-release`. |
-| [`deploy-prod.yml`](../.github/workflows/deploy-prod.yml) | Triggers: semver tag `push`, `workflow_run` after Release (success + tag on commit), `workflow_dispatch` from a **tag** ref. Verifies tag commit is on `main` before deploy. |
-| [`package.json`](../package.json) | Dev dependencies: `semantic-release`, plugins, `conventional-changelog-conventionalcommits`. |
+| [`.releaserc.json`](../.releaserc.json) | `main` only; `@semantic-release/commit-analyzer` with Conventional Commits preset — **no** `github` / `changelog` / `git` plugins. |
+| [`release.yml`](../.github/workflows/release.yml) | Trigger: `push` to `main`. `permissions: contents: write`. Runs `npm ci` and `npx semantic-release`. |
+| [`deploy-prod.yml`](../.github/workflows/deploy-prod.yml) | Triggers: semver tag `push`, `workflow_run` after Release, `workflow_dispatch` from a **tag** ref. `workflow_run` resolves tag with `--points-at` the Release workflow head commit. |
+| [`package.json`](../package.json) | Dev dependencies: `semantic-release`, `@semantic-release/commit-analyzer`, `conventional-changelog-conventionalcommits`. |
 
-Operational detail for developers (squash message, breaking changes, troubleshooting) lives in [developer-release-workflow.md](./developer-release-workflow.md). Copy-paste artifacts for new repos: [ci-release-code-reference.md](./ci-release-code-reference.md).
+Operational detail for developers lives in [developer-release-workflow.md](./developer-release-workflow.md). Copy-paste artifacts: [ci-release-code-reference.md](./ci-release-code-reference.md).
 
 ---
 
 ## Versioning semantics (what seniors usually care about)
 
 - **All commits since the last release tag** are considered; the bump is the **maximum** implied by any of them (e.g. one `feat!:` among several `fix:` commits still drives a breaking/major bump per policy).
-- **Non-conventional** commit messages do not contribute to the bump (they do not “cancel” a release; they are skipped for analysis).
+- **Non-conventional** commit messages do not contribute to the bump (they are skipped for analysis).
 - **Breaking changes** should use `feat!:` / `fix!:` in the **subject**, or a proper header plus `BREAKING CHANGE:` in the **body** — not a standalone `BREAKING CHANGE:` line as the only message (analyzer treats that as invalid).
-- **Pre-1.0** versions (`v0.x.y`) follow semver semantics you configure; bumps may not match intuition for “major” vs “next 0.x” — align with product on when to ship `v1.0.0`.
+- **Pre-1.0** versions (`v0.x.y`) follow semver semantics you configure; align with product on when to ship `v1.0.0`.
 
 ---
 
@@ -77,7 +78,7 @@ Workflows **cannot** prevent direct pushes to `main` by themselves. To avoid unr
 - Restrict who can push to `main`.
 - Optionally disallow force-push and branch deletion.
 
-**Reviewers** enforce code review policy; they do **not** by default enforce conventional **merge commit** wording. Train mergers (or add optional CI later) if bad squash messages become a problem.
+**Reviewers** enforce code review policy; they do **not** by default enforce conventional **merge commit** wording.
 
 ### 2. Deploy job is a stub
 
@@ -108,7 +109,7 @@ Redeploy uses **workflow_dispatch** with the run ref set to a **version tag** so
 - **Separation of concerns:** tagging (Release) and gating prod (tags on `main`) are separate workflows with clear triggers.
 - **Aligns with common practice:** Conventional Commits + semantic-release + tag-based deploy.
 - **Known platform limitation addressed:** `workflow_run` after Release avoids silent failure when tags are created with `GITHUB_TOKEN`.
-- **Honest about humans:** merge-dialog message drives semver; reviews cover code, not a separate automated title linter.
+- **Minimal release surface:** tags only — no duplicate release artifacts or changelog commits on `main`.
 
 ---
 

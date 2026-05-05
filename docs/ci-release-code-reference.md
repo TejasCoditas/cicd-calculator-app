@@ -1,14 +1,12 @@
 # CI release and prod deploy — code reference
 
-Add or align the following in the repository. Production branch is assumed to be `main`.
+Add or align the following in the repository. Production branch is assumed to be `main`. **semantic-release** is configured for **git tags only** (no GitHub Releases).
 
 ## `package.json` (`devDependencies`)
 
 ```json
 {
   "@semantic-release/commit-analyzer": "^13.0.0",
-  "@semantic-release/github": "^11.0.0",
-  "@semantic-release/release-notes-generator": "^14.0.0",
   "conventional-changelog-conventionalcommits": "^9.0.0",
   "semantic-release": "^24.0.0"
 }
@@ -31,19 +29,6 @@ npm install
       {
         "preset": "conventionalcommits"
       }
-    ],
-    [
-      "@semantic-release/release-notes-generator",
-      {
-        "preset": "conventionalcommits"
-      }
-    ],
-    [
-      "@semantic-release/github",
-      {
-        "successComment": false,
-        "releasedLabels": false
-      }
     ]
   ]
 }
@@ -63,8 +48,6 @@ on:
 
 permissions:
   contents: write
-  issues: write
-  pull-requests: write
 
 concurrency:
   group: release-main
@@ -230,3 +213,5 @@ jobs:
 `deploy-prod.yml` `workflow_run.workflows` must match `release.yml` top-level `name` exactly (`Release (semantic version tag)`).
 
 Replace the `Deploy` step with real production deploy commands.
+
+**Tags only:** this reference configures semantic-release to push **git tags** only (no GitHub Releases, no `CHANGELOG.md` commits). To add GitHub Releases or changelogs again, reintroduce `@semantic-release/github` and/or `@semantic-release/changelog` + `@semantic-release/git` in `.releaserc.json`.
