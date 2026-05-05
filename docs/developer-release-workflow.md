@@ -28,8 +28,11 @@ A workflow (`lint-pr-title`) validates the PR title against conventional commit 
 ## What happens in CI
 
 1. **Merge to `main`** runs the **Release** workflow. It analyzes commits since the last tag and may create a new **Git tag** and GitHub Release.
-2. **Pushing a matching tag** runs **Deploy (production)** for that version automatically.
-3. **Manual redeploy**: open **Actions → Deploy (production) → Run workflow**. Under **Use workflow from**, switch the ref control from the default branch to **Tags** and pick the version (e.g. `v1.2.3`). The run must use a **tag ref**, not `main`, or deployment is skipped.
+2. **Deploy (production)** runs automatically **after Release completes successfully**, using the semver tag on that release commit. This is required because tag pushes made with the default `GITHUB_TOKEN` do **not** trigger other workflows on GitHub.
+3. **Pushing a matching tag** in other ways (for example a personal access token or manual `git push`) can still trigger **Deploy (production)** via the tag `push` trigger.
+4. **Manual redeploy**: open **Actions → Deploy (production) → Run workflow**. Under **Use workflow from**, switch the ref control from the default branch to **Tags** and pick the version (e.g. `v1.2.3`). The run must use a **tag ref**, not `main`, or deployment is skipped.
+
+If you later configure semantic-release to use a **PAT** so tag pushes trigger workflows, a release could start both the **workflow_run** deploy and the **push** deploy for the same tag. In that case, remove the `workflow_run` trigger from **Deploy (production)** or accept redundant runs and rely on idempotent deploys.
 
 **Note:** GitHub runs the workflow file **as it exists on that tag’s commit**. If deploy logic changed later on `main`, redeploying an old tag still uses the older workflow definition.
 
