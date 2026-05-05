@@ -1,5 +1,6 @@
 name: Deploy (production)
 
+# Tag push: deploy that tag. Manual run: optional tag input, or empty = latest v* on main.
 run-name: Deploy prod ${{ github.ref_name }}
 
 on:
@@ -7,12 +8,18 @@ on:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: >-
+          Optional prod tag (vMAJOR.MINOR.PATCH). Leave empty to redeploy the latest semver tag on main.
+        required: false
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: deploy-prod-${{ github.ref }}
+  group: deploy-prod
   cancel-in-progress: false
 
 jobs:
@@ -21,6 +28,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       should_deploy: ${{ steps.check.outputs.should_deploy }}
+      deploy_ref: ${{ steps.check.outputs.deploy_ref }}
+      deploy_tag: ${{ steps.check.outputs.deploy_tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,30 +37,75 @@ jobs:
 
       - name: Check if deploy should run
         id: check
+        env:
+          TAG_INPUT: ${{ github.event.inputs.tag }}
         run: |
           set -euo pipefail
 
-          if [[ "${GITHUB_REF}" != refs/tags/* ]]; then
-            echo "::warning::Production deploy runs only from a version tag (vMAJOR.MINOR.PATCH), not branches. Ref: ${GITHUB_REF_NAME}"
-            echo "should_deploy=false" >> "${GITHUB_OUTPUT}"
+          write_outputs() {
+            echo "should_deploy=$1" >> "${GITHUB_OUTPUT}"
+            echo "deploy_ref=${2:-}" >> "${GITHUB_OUTPUT}"
+            echo "deploy_tag=${3:-}" >> "${GITHUB_OUTPUT}"
+          }
+
+          validate_tag_on_main() {
+            local tag="$1"
+            if [[ ! "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::warning::Production tag must be vMAJOR.MINOR.PATCH (digits only, e.g. v1.0.0). Got: ${tag}"
+              write_outputs false
+              exit 0
+            fi
+            if ! git rev-parse "${tag}^{commit}" >/dev/null 2>&1; then
+              echo "::warning::Tag ${tag} does not exist in this repository."
+              write_outputs false
+              exit 0
+            fi
+            local commit
+            commit="$(git rev-parse "${tag}^{commit}")"
+            git fetch origin main
+            if ! git merge-base --is-ancestor "${commit}" origin/main; then
+              echo "::warning::Tag ${tag} does not point to a commit on main — skipping deployment."
+              write_outputs false
+              exit 0
+            fi
+            write_outputs true "refs/tags/${tag}" "${tag}"
+          }
+
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]] && [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            tag="${GITHUB_REF_NAME}"
+            git fetch origin main
+            if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
+              echo "::warning::Tag ${tag} does not point to a commit on main — skipping deployment."
+              write_outputs false
+              exit 0
+            fi
+            if [[ ! "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::warning::Production tag must be vMAJOR.MINOR.PATCH (digits only, e.g. v1.0.0). Got: ${tag}"
+              write_outputs false
+              exit 0
+            fi
+            write_outputs true "${GITHUB_REF}" "${tag}"
             exit 0
           fi
 
-          tag="${GITHUB_REF_NAME}"
-          if [[ ! "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::warning::Production tag must be vMAJOR.MINOR.PATCH (digits only, e.g. v1.0.0). Got: ${tag}"
-            echo "should_deploy=false" >> "${GITHUB_OUTPUT}"
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            git fetch origin main --tags
+            tag_use="${TAG_INPUT:-}"
+            tag_use="${tag_use#refs/tags/}"
+            if [[ -z "${tag_use}" ]]; then
+              tag_use="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --merged origin/main --sort=-v:refname | head -1)"
+              if [[ -z "${tag_use}" ]]; then
+                echo "::warning::No vMAJOR.MINOR.PATCH tags found on main — cannot redeploy."
+                write_outputs false
+                exit 0
+              fi
+            fi
+            validate_tag_on_main "${tag_use}"
             exit 0
           fi
 
-          git fetch origin main
-          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
-            echo "::warning::Tag ${tag} does not point to a commit on main — skipping deployment."
-            echo "should_deploy=false" >> "${GITHUB_OUTPUT}"
-            exit 0
-          fi
-
-          echo "should_deploy=true" >> "${GITHUB_OUTPUT}"
+          echo "::warning::Unsupported event or ref for production deploy: ${GITHUB_EVENT_NAME} ${GITHUB_REF}"
+          write_outputs false
 
   deploy:
     needs: verify
@@ -60,10 +114,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ needs.verify.outputs.deploy_ref }}
           fetch-depth: 0
 
       - name: Deploy
+        env:
+          DEPLOY_TAG: ${{ needs.verify.outputs.deploy_tag }}
         run: |
           set -euo pipefail
-          echo "Add production deploy steps for ${GITHUB_REF_NAME}"
+          echo "Add production deploy steps for ${DEPLOY_TAG}"
