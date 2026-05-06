@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   release:
-    name: Tag 
+    name: Tag release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
