@@ -1,11 +1,12 @@
-name: Release (semantic version tag)
+name: Tagging (semantic version tag)
 
-run-name: Release on main ${{ github.sha }}
+run-name: Tagging on main ${{ github.sha }}
 
 on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -32,7 +33,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Semantic release
+      - name: Semantic tagging (dry-run)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx semantic-release --dry-run
+
+      - name: Semantic tagging
+        if: github.event_name == 'push'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx semantic-release
