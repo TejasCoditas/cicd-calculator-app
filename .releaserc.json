@@ -11,7 +11,8 @@
           { "type": "improvement", "release": "minor" },
           { "type": "security", "release": "patch" },
           { "type": "upgrade", "release": "minor" },
-          { "type": "tweak", "release": "patch" }
+          { "type": "tweak", "release": "patch" },
+          { "type": "release", "release": "major" }
         ]
       }
     ],
