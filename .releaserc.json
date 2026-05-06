@@ -4,7 +4,15 @@
     [
       "@semantic-release/commit-analyzer",
       {
-        "preset": "conventionalcommits"
+        "preset": "conventionalcommits",
+        "releaseRules": [
+          { "type": "hotfix", "release": "patch" },
+          { "type": "feature", "release": "minor" },
+          { "type": "improvement", "release": "minor" },
+          { "type": "security", "release": "patch" },
+          { "type": "upgrade", "release": "minor" },
+          { "type": "tweak", "release": "patch" }
+        ]
       }
     ]
   ]
