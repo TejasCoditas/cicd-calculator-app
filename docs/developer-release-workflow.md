@@ -4,6 +4,8 @@ This repository deploys production from **semver tags** (`vMAJOR.MINOR.PATCH`). 
 
 **What semantic-release reads:** the **actual commit(s)** on `main` after merge — for squash merge, that is whatever appears in the **Squash and merge** commit message box in the GitHub UI (first line = subject), not the PR title unless you leave the default unchanged.
 
+**What semantic-release reads:** the **actual commit(s)** on `main` after merge — for squash merge, that is whatever appears in the **Squash and merge** commit message box in the GitHub UI (first line = subject), not the PR title unless you leave the default unchanged.
+
 ## What you need to do
 
 ### 1. Use squash merge into `main`
