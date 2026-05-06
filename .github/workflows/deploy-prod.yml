@@ -1,7 +1,7 @@
 name: Deploy (production)
 
 # - Tag push: deploy that tag (e.g. tag pushed with a PAT or outside Actions).
-# - workflow_run: after Release workflow — required when semantic-release uses GITHUB_TOKEN (tag pushes do not trigger workflows).
+# - workflow_run: after Tagging workflow — required when semantic-release uses GITHUB_TOKEN (tag pushes do not trigger workflows).
 # - Manual: workflow_dispatch with "Use workflow from" set to a vX.Y.Z tag (not a branch).
 run-name: Deploy prod ${{ github.ref_name }}
 
@@ -11,7 +11,7 @@ on:
       - 'v[0-9]+.[0-9]+.[0-9]+'
   workflow_run:
     workflows:
-      - Release (semantic version tag)
+      - Tagging (semantic version tag)
     types:
       - completed
     branches:
