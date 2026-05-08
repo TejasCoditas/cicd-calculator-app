@@ -9,8 +9,8 @@ This document summarizes what the repository automates today, what it assumes, a
 | Area | Status |
 |------|--------|
 | **Semver tagging from conventional commits** | Implemented (`semantic-release` + Conventional Commits preset on `main`). |
-| **GitHub Releases** | **Not** used — only **git tags** are pushed (no `POST /releases`, no release notes UI). |
-| **Prod deploy after a new version tag** | Implemented (`workflow_run` after Release finds tag `--points-at` merge commit; tag `push` covers PAT/manual tags). |
+| **GitHub Releases** | **Not** used — **git tags** plus a **`chore(release)`** commit on `main` (no `POST /releases`, no release notes UI). |
+| **Prod deploy after a new version tag** | Implemented (`workflow_run` after Tagging finds semver tag `--points-at` `origin/main` tip; tag `push` covers PAT/manual tags). |
 | **Automated PR title / commit-message lint** | **Not** used; **squash commit message** (merge dialog) is the release input — discipline is human (merger + reviewers for code, not for message format). |
 | **Blocking direct pushes to `main`** | **Not** enforced by these workflows — requires **branch protection / rulesets**. |
 | **Real prod deploy commands** | Placeholder in workflow; replace with your platform (K8s, VM, PaaS, etc.). |
@@ -25,23 +25,28 @@ This document summarizes what the repository automates today, what it assumes, a
 flowchart TD
   pr[PR and code review]
   merge[Squash merge with conventional message]
-  rel[Release workflow semantic-release]
-  tag[Git tag vMAJOR.MINOR.PATCH only]
-  dep[Deploy production workflow]
+  tagw[Tagging workflow]
+  sr[semantic-release]
+  ver[Version commit on main — package.json + skip ci]
+  gtag[Git tag vMAJOR.MINOR.PATCH]
+  dep[Deploy production]
   prod[Production environment]
 
   pr --> merge
-  merge --> rel
-  rel --> tag
-  tag --> dep
+  merge --> tagw
+  tagw --> sr
+  sr --> ver
+  ver --> gtag
+  tagw -. workflow_run completed .-> dep
+  gtag -. optional tag push PAT .-> dep
   dep --> prod
 ```
 
 1. Developers open PRs; **reviewers** approve per branch protection.
 2. On **Squash and merge**, the merger sets the **commit message** so the first line follows [Conventional Commits](https://www.conventionalcommits.org/); that text is what **semantic-release** analyzes on `main`.
-3. After merge to **`main`**, **Release** runs: analyzes all commits since the last tag, applies the **strongest** applicable semver bump, creates and pushes a **git tag** only (semantic-release core — no GitHub Release, no changelog commit).
-4. **Deploy (production)** runs when Release completes successfully (`workflow_run`), resolving the tag on the merge commit — avoids relying on tag `push` events from `GITHUB_TOKEN`, which GitHub does not forward to other workflows.
-5. Optional: manual redeploy by running Deploy with **Use workflow from** set to an existing **`v*.*.*`** tag.
+3. After merge to **`main`**, **Tagging** runs: semantic-release analyzes commits since the last tag, applies the **strongest** applicable semver bump, updates **`package.json` / lockfile**, pushes a **`chore(release): … [skip ci]`** commit to `main`, then creates and pushes **`vMAJOR.MINOR.PATCH`** on that release commit (no GitHub Release UI).
+4. **Deploy (production)** runs when Tagging completes successfully (`workflow_run`), fetches `main`, and resolves a semver tag **`--points-at` the tip of `origin/main`** (the release commit). This avoids relying on tag `push` events from `GITHUB_TOKEN`, which GitHub does not forward to other workflows.
+5. Optional: manual redeploy via **workflow_dispatch** with **Use workflow from** set to an existing **`v*.*.*`** tag (see [developer-release-workflow.md](./developer-release-workflow.md) diagram).
 
 ---
 
@@ -49,10 +54,10 @@ flowchart TD
 
 | Artifact | Role |
 |----------|------|
-| [`.releaserc.json`](../.releaserc.json) | `main` only; `@semantic-release/commit-analyzer` with Conventional Commits preset — **no** `github` / `changelog` / `git` plugins. |
-| [`release.yml`](../.github/workflows/release.yml) | Trigger: `push` to `main`. `permissions: contents: write`. Runs `npm ci` and `npx semantic-release`. |
-| [`deploy-prod.yml`](../.github/workflows/deploy-prod.yml) | Triggers: semver tag `push`, `workflow_run` after Release, `workflow_dispatch` from a **tag** ref. `workflow_run` resolves tag with `--points-at` the Release workflow head commit. |
-| [`package.json`](../package.json) | Dev dependencies: `semantic-release`, `@semantic-release/commit-analyzer`, `conventional-changelog-conventionalcommits`. |
+| [`.releaserc.json`](../.releaserc.json) | `main` only; `commit-analyzer` (Conventional Commits + custom types), `@semantic-release/npm` (`npmPublish: false`), `@semantic-release/git` (commit version bump with `[skip ci]`). **No** GitHub Release / changelog plugins. |
+| [`tag.yml`](../.github/workflows/tag.yml) | Trigger: `push` to `main`. `permissions: contents: write`. Runs `npm ci` and `npx semantic-release`. |
+| [`deploy-prod.yml`](../.github/workflows/deploy-prod.yml) | Triggers: semver tag `push`, `workflow_run` after **Tagging**, `workflow_dispatch` from a **tag** ref. `workflow_run` resolves tag with `--points-at` **`origin/main`** after fetch. |
+| [`package.json`](../package.json) | Dev dependencies include `semantic-release`, `@semantic-release/commit-analyzer`, `@semantic-release/npm`, `@semantic-release/git`, `conventional-changelog-conventionalcommits`. |
 
 Operational detail for developers lives in [developer-release-workflow.md](./developer-release-workflow.md). Copy-paste artifacts: [ci-release-code-reference.md](./ci-release-code-reference.md).
 
@@ -106,10 +111,10 @@ Redeploy uses **workflow_dispatch** with the run ref set to a **version tag** so
 
 ## Why this is a defensible approach for seniors
 
-- **Separation of concerns:** tagging (Release) and gating prod (tags on `main`) are separate workflows with clear triggers.
+- **Separation of concerns:** tagging (**Tagging** workflow) and gating prod (tags on `main`) are separate workflows with clear triggers.
 - **Aligns with common practice:** Conventional Commits + semantic-release + tag-based deploy.
-- **Known platform limitation addressed:** `workflow_run` after Release avoids silent failure when tags are created with `GITHUB_TOKEN`.
-- **Minimal release surface:** tags only — no duplicate release artifacts or changelog commits on `main`.
+- **Known platform limitation addressed:** `workflow_run` after Tagging avoids silent failure when tags are created with `GITHUB_TOKEN`.
+- **Release surface:** semver **git tags** plus an automated **version commit** on `main` (`package.json` / lockfile); no GitHub Releases UI.
 
 ---
 

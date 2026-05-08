@@ -1,12 +1,18 @@
 # CI release and prod deploy — code reference
 
-Add or align the following in the repository. Production branch is assumed to be `main`. **semantic-release** is configured for **git tags only** (no GitHub Releases).
+Add or align the following in the repository. Production branch is assumed to be **`main`**. **semantic-release** creates a **version commit** on `main` (`package.json` / `package-lock.json`), then a **semver git tag**. **No GitHub Releases** UI is used.
+
+For diagrams (automatic deploy vs **workflow_dispatch**), see [developer-release-workflow.md](./developer-release-workflow.md).
 
 ## `package.json` (`devDependencies`)
+
+Include at least:
 
 ```json
 {
   "@semantic-release/commit-analyzer": "^13.0.0",
+  "@semantic-release/git": "^10.0.1",
+  "@semantic-release/npm": "^12.0.2",
   "conventional-changelog-conventionalcommits": "^9.0.0",
   "semantic-release": "^24.0.0"
 }
@@ -20,6 +26,8 @@ npm install
 
 ## `.releaserc.json` (repository root)
 
+The live file may include extra **`releaseRules`** (custom commit types). Core plugins:
+
 ```json
 {
   "branches": ["main"],
@@ -27,19 +35,37 @@ npm install
     [
       "@semantic-release/commit-analyzer",
       {
-        "preset": "conventionalcommits"
+        "preset": "conventionalcommits",
+        "releaseRules": []
+      }
+    ],
+    [
+      "@semantic-release/npm",
+      {
+        "npmPublish": false
+      }
+    ],
+    [
+      "@semantic-release/git",
+      {
+        "assets": ["package.json", "package-lock.json"],
+        "message": "chore(release): ${nextRelease.version} [skip ci]"
       }
     ]
   ]
 }
 ```
 
-## `.github/workflows/release.yml`
+Copy **`releaseRules`** and other options from the repository [`.releaserc.json`](../.releaserc.json) when replicating.
+
+## `.github/workflows/tag.yml`
+
+Workflow **`name`** must match what **`deploy-prod.yml`** lists under `workflow_run.workflows` (currently **Tagging (semantic version tag)**).
 
 ```yaml
-name: Release (semantic version tag)
+name: Tagging (semantic version tag)
 
-run-name: Release on main ${{ github.sha }}
+run-name: Tagging on main ${{ github.sha }}
 
 on:
   push:
@@ -71,7 +97,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Semantic release
+      - name: Semantic tagging
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx semantic-release
@@ -79,11 +105,19 @@ jobs:
 
 ## `.github/workflows/deploy-prod.yml`
 
+Triggers:
+
+- **`push`** of semver tags `vMAJOR.MINOR.PATCH` (e.g. PAT or external push).
+- **`workflow_run`** when **Tagging** completes on `main` — primary path when tags are created with `GITHUB_TOKEN`.
+- **`workflow_dispatch`** — run must use **Use workflow from: Tags → `vX.Y.Z`**. Default branch ref is rejected by the verify script.
+
+`workflow_run` verification **fetches `origin/main` and tags`**, then selects semver tags **`--points-at`** that tip. That matches the release flow where **`@semantic-release/git`** adds a **release commit** after the merge commit; the tag sits on the release commit, not on `workflow_run.head_sha`.
+
 ```yaml
 name: Deploy (production)
 
 # - Tag push: deploy that tag (e.g. tag pushed with a PAT or outside Actions).
-# - workflow_run: after Release workflow — required when semantic-release uses GITHUB_TOKEN (tag pushes do not trigger workflows).
+# - workflow_run: after Tagging workflow — required when semantic-release uses GITHUB_TOKEN (tag pushes do not trigger workflows).
 # - Manual: workflow_dispatch with "Use workflow from" set to a vX.Y.Z tag (not a branch).
 run-name: Deploy prod ${{ github.ref_name }}
 
@@ -93,7 +127,7 @@ on:
       - 'v[0-9]+.[0-9]+.[0-9]+'
   workflow_run:
     workflows:
-      - Release (semantic version tag)
+      - Tagging (semantic version tag)
     types:
       - completed
     branches:
@@ -123,7 +157,6 @@ jobs:
       - name: Check if deploy should run
         id: check
         env:
-          RELEASE_HEAD_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || '' }}
           RELEASE_CONCLUSION: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion || '' }}
         run: |
           set -euo pipefail
@@ -136,30 +169,19 @@ jobs:
 
           if [[ "${GITHUB_EVENT_NAME}" == "workflow_run" ]]; then
             if [[ "${RELEASE_CONCLUSION:-}" != "success" ]]; then
-              echo "::notice::Release workflow finished with '${RELEASE_CONCLUSION:-unknown}' — skipping deploy."
-              write_outputs false
-              exit 0
-            fi
-            HEAD_SHA="${RELEASE_HEAD_SHA:-}"
-            if [[ -z "${HEAD_SHA}" ]]; then
-              echo "::warning::workflow_run missing head SHA — skipping deploy."
+              echo "::notice::Tagging workflow finished with '${RELEASE_CONCLUSION:-unknown}' — skipping deploy."
               write_outputs false
               exit 0
             fi
             git fetch origin main --tags
-            candidates="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --points-at "${HEAD_SHA}")"
+            MAIN_SHA="$(git rev-parse origin/main)"
+            candidates="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --points-at "${MAIN_SHA}")"
             if [[ -z "${candidates}" ]]; then
-              echo "::notice::No vMAJOR.MINOR.PATCH tag on the release commit — semantic-release did not publish a version. Skipping deploy."
+              echo "::notice::No vMAJOR.MINOR.PATCH tag on the current main tip — semantic-release did not publish a version (or main has moved). Skipping deploy."
               write_outputs false
               exit 0
             fi
             tag="$(echo "${candidates}" | sort -V | tail -1)"
-            git fetch origin main
-            if ! git merge-base --is-ancestor "${HEAD_SHA}" origin/main; then
-              echo "::warning::Release commit is not on main — skipping deployment."
-              write_outputs false
-              exit 0
-            fi
             write_outputs true "refs/tags/${tag}" "${tag}"
             exit 0
           fi
@@ -210,8 +232,8 @@ jobs:
           echo "Add production deploy steps for ${DEPLOY_TAG}"
 ```
 
-`deploy-prod.yml` `workflow_run.workflows` must match `release.yml` top-level `name` exactly (`Release (semantic version tag)`).
+**Invariant:** `deploy-prod.yml` → `workflow_run.workflows` entries must match **`tag.yml`** top-level **`name`** exactly.
 
 Replace the `Deploy` step with real production deploy commands.
 
-**Tags only:** this reference configures semantic-release to push **git tags** only (no GitHub Releases, no `CHANGELOG.md` commits). To add GitHub Releases or changelogs again, reintroduce `@semantic-release/github` and/or `@semantic-release/changelog` + `@semantic-release/git` in `.releaserc.json`.
+**Version on `main`:** `@semantic-release/npm` + `@semantic-release/git` commit the bump; **`[skip ci]`** avoids a second Tagging run on that push. To add **GitHub Releases** or **CHANGELOG.md** commits, extend `.releaserc.json` with `@semantic-release/github` and/or `@semantic-release/changelog` (and adjust assets in `@semantic-release/git`).

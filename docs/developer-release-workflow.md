@@ -1,10 +1,60 @@
 # Developer guide: production releases and versioning
 
-This repository deploys production from **semver tags** (`vMAJOR.MINOR.PATCH`). Tags are created automatically when changes land on `main`, using **semantic-release** and [Conventional Commits](https://www.conventionalcommits.org/). **No GitHub Releases** are created — only **git tags** (see the repository **Tags** page).
+This repository deploys production from **semver tags** (`vMAJOR.MINOR.PATCH`). When a releasable change lands on `main`, **semantic-release** updates **`package.json` / `package-lock.json`**, pushes a **release commit** to `main`, then creates and pushes the **git tag** on that commit. **No GitHub Releases** are created — use the repository **Tags** page.
 
 **What semantic-release reads:** the **actual commit(s)** on `main` after merge — for squash merge, that is whatever appears in the **Squash and merge** commit message box in the GitHub UI (first line = subject), not the PR title unless you leave the default unchanged.
 
-**What semantic-release reads:** the **actual commit(s)** on `main` after merge — for squash merge, that is whatever appears in the **Squash and merge** commit message box in the GitHub UI (first line = subject), not the PR title unless you leave the default unchanged.
+## Deployment flow (diagrams)
+
+### Automatic path (merge → tag → deploy)
+
+After you merge to `main`, **Tagging** runs once. Inside that run, semantic-release may add a **second** commit (the version bump) with `[skip ci]` so GitHub does **not** start another Tagging run for that push. **Deploy (production)** is started by **`workflow_run`** when Tagging **completes**, then resolves the semver tag on the **current tip of `main`** (the release commit).
+
+```mermaid
+flowchart TD
+  subgraph merge["1. Merge"]
+    PR[PR approved]
+    SQ[Squash merge with conventional first line]
+    PR --> SQ
+    SQ --> M[Push to main]
+  end
+
+  subgraph tag["2. Tagging workflow"]
+    M --> TW[Workflow: Tagging semantic version tag]
+    TW --> SR[semantic-release]
+    SR --> NPM[npm: write version to package.json / lockfile]
+    NPM --> GIT[git: commit chore release with skip ci]
+    GIT --> PUSH[Push release commit to main]
+    PUSH --> GTAG[Create and push vMAJOR.MINOR.PATCH on that commit]
+  end
+
+  subgraph dep["3. Deploy production"]
+    TW -.->|workflow completes| WR[workflow_run trigger]
+    GTAG -.->|optional: tag push with PAT| TP[push tags trigger]
+    WR --> V[Verify: semver tag points at origin/main tip]
+    TP --> V
+    V --> D[Deploy job at tag ref]
+  end
+```
+
+**Why `workflow_run`?** Pushes made with the default **`GITHUB_TOKEN`** (including tag pushes from Actions) do **not** trigger other workflows. The deploy workflow listens for **successful completion** of Tagging and then finds the new tag on `main`.
+
+**Why not rely on `workflow_run.head_sha`?** That SHA is the commit that **started** Tagging (often the merge commit). The semver tag is placed on the **release** commit after `@semantic-release/git`, so deploy resolves tags with `--points-at` **`origin/main`** after `git fetch`.
+
+### Manual path (`workflow_dispatch`)
+
+To **redeploy** an existing version without a new merge, run **Deploy (production)** from the **Actions** tab. You must select a **tag ref**, not `main`.
+
+```mermaid
+flowchart TD
+  A[Actions → Deploy production → Run workflow] --> B[Use workflow from: Tags]
+  B --> C[Pick vMAJOR.MINOR.PATCH]
+  C --> D[github.ref is refs/tags/v…]
+  D --> E[Verify: tag commit is on main history]
+  E --> F[Deploy job checks out that tag]
+```
+
+If **Use workflow from** stays on the **default branch**, the run uses `refs/heads/main`, the verify step **skips** deploy, and logs explain that you need a tag ref.
 
 ## What you need to do
 
@@ -21,6 +71,8 @@ Merge with **Squash and merge**. Before you confirm, edit the **commit message**
 | Breaking change (major bump) | `feat!: remove legacy API` |
 | Docs / chore only (often no release) | `docs: update README` — may not trigger a version bump |
 
+The repo also maps extra **types** in `.releaserc.json` (for example `hotfix`, `feature`, `tweak`) — see that file for the full list.
+
 Use types your team agrees on (`feat`, `fix`, `perf`, `refactor`, etc.). **Avoid** vague subjects like `Update stuff` — semantic-release may not produce a new tag, or the wrong bump may be inferred.
 
 ### Breaking changes (major version)
@@ -33,18 +85,18 @@ The analyzer uses the **Conventional Commits** preset so `feat!:` / `fix!:` in t
 
 ## What happens in CI
 
-1. **Merge to `main`** runs the **Release** workflow. It analyzes commits since the last tag and may create and push a new **git tag** (`vMAJOR.MINOR.PATCH`) only.
-2. **Deploy (production)** runs automatically **after Release completes successfully**, finding the tag on the **same commit** as the merge that triggered Release (`workflow_run` + `--points-at`). Tag pushes made with the default `GITHUB_TOKEN` do **not** trigger other workflows; `workflow_run` handles deploy.
-3. **Pushing a matching tag** in other ways (for example a personal access token or manual `git push`) can still trigger **Deploy (production)** via the tag `push` trigger.
-4. **Manual redeploy**: open **Actions → Deploy (production) → Run workflow**. Under **Use workflow from**, switch the ref control from the default branch to **Tags** and pick the version (e.g. `v1.2.3`). The run must use a **tag ref**, not `main`, or deployment is skipped.
+1. **Merge to `main`** runs the **Tagging** workflow ([`tag.yml`](../.github/workflows/tag.yml)). semantic-release analyzes commits since the last tag, may bump **`package.json`**, commits **`chore(release): … [skip ci]`**, pushes to `main`, then creates and pushes **`vMAJOR.MINOR.PATCH`** on that release commit.
+2. **Deploy (production)** runs when Tagging **completes successfully** (`workflow_run`), then selects the semver tag on the **current `origin/main` tip**. Tag pushes made with the default `GITHUB_TOKEN` do **not** trigger other workflows; `workflow_run` covers the normal case.
+3. **Pushing a matching tag** with a **PAT** or from outside Actions can still trigger **Deploy (production)** via the tag **`push`** trigger (same verify rules: tag must point to a commit on `main`).
+4. **Manual redeploy**: **Actions → Deploy (production) → Run workflow**. Under **Use workflow from**, switch to **Tags** and pick **`vX.Y.Z`**. Runs started from **`main`** are intentionally skipped.
 
-If you later configure semantic-release to use a **PAT** so tag pushes trigger workflows, a release could start both the **workflow_run** deploy and the **push** deploy for the same tag. In that case, remove the `workflow_run` trigger from **Deploy (production)** or accept redundant runs and rely on idempotent deploys.
+If you later configure semantic-release to use a **PAT** so tag pushes always trigger workflows, a release could start both the **`workflow_run`** deploy and the **`push`** deploy for the same tag. In that case, remove the `workflow_run` trigger from **Deploy (production)** or accept redundant runs and rely on idempotent deploys.
 
-**Note:** GitHub runs the workflow file **as it exists on that tag’s commit**. If deploy logic changed later on `main`, redeploying an old tag still uses the older workflow definition.
+**Note:** GitHub runs the workflow file **as it exists on that tag’s commit** when you dispatch from a tag. If deploy logic changed later on `main`, redeploying an old tag still uses the older workflow definition.
 
 ## Troubleshooting
 
-- **No new tag after merge**: Usually only `feat`, `fix`, `perf`, `refactor`, and similar types trigger releases; pure `chore:` / `docs:` may not. Check the Release workflow logs on `main`.
+- **No new tag after merge**: Usually only releasable types trigger a version; pure `chore:` / `docs:` may not. Check the **Tagging** workflow logs on `main`.
 - **Wrong version bump**: Fix comes from the **squashed commit message** you confirmed in GitHub. Use `feat!:` / `fix!:` in the subject, or `BREAKING CHANGE:` in the body **after** a normal `type: subject` line — not as the only line.
 - **Manual run did not deploy**: Confirm **Use workflow from** is a **`vMAJOR.MINOR.PATCH` tag**, not a branch.
 
