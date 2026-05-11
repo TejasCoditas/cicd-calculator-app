@@ -1,18 +1,17 @@
 name: Tagging (semantic version tag)
 
-run-name: Tagging on main ${{ github.sha }}
+run-name: Tagging on dev ${{ github.sha }}
 
 on:
   push:
     branches:
-      - main
-  workflow_dispatch:
+      - dev
 
 permissions:
   contents: write
 
 concurrency:
-  group: release-main
+  group: release-dev
   cancel-in-progress: false
 
 jobs:
