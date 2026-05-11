@@ -11,22 +11,8 @@
           { "type": "improvement", "release": "minor" },
           { "type": "security", "release": "patch" },
           { "type": "upgrade", "release": "minor" },
-          { "type": "tweak", "release": "patch" },
-          { "type": "release", "release": "major" }
+          { "type": "tweak", "release": "patch" }
         ]
-      }
-    ],
-    [
-      "@semantic-release/npm",
-      {
-        "npmPublish": false
-      }
-    ],
-    [
-      "@semantic-release/git",
-      {
-        "assets": ["package.json", "package-lock.json"],
-        "message": "chore(release): ${nextRelease.version} [skip ci]"
       }
     ]
   ]
