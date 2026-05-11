@@ -1,22 +1,14 @@
 name: Deploy (production)
 
-# - Tag push: deploy that tag (e.g. tag pushed with a PAT or outside Actions).
-# - workflow_run: after Tagging workflow — required when semantic-release uses GITHUB_TOKEN (tag pushes do not trigger workflows).
-# - Manual: workflow_dispatch with "Use workflow from" set to a vX.Y.Z tag (not a branch).
-run-name: Deploy prod ${{ github.ref_name }}
+run-name: Deploy prod ${{ inputs.version || 'latest' }}
 
 on:
-  push:
-    tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
-  workflow_run:
-    workflows:
-      - Tagging (semantic version tag)
-    types:
-      - completed
-    branches:
-      - main
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag to deploy (e.g. v1.2.3). Leave blank to deploy the latest tag."
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -27,76 +19,47 @@ concurrency:
 
 jobs:
   verify:
-    name: Verify branch
+    name: Verify tag
     runs-on: ubuntu-latest
     outputs:
       should_deploy: ${{ steps.check.outputs.should_deploy }}
-      deploy_ref: ${{ steps.check.outputs.deploy_ref }}
       deploy_tag: ${{ steps.check.outputs.deploy_tag }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Check if deploy should run
+      - name: Resolve and verify tag
         id: check
-        env:
-          RELEASE_CONCLUSION: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion || '' }}
         run: |
           set -euo pipefail
 
-          write_outputs() {
-            echo "should_deploy=$1" >> "${GITHUB_OUTPUT}"
-            echo "deploy_ref=${2:-}" >> "${GITHUB_OUTPUT}"
-            echo "deploy_tag=${3:-}" >> "${GITHUB_OUTPUT}"
-          }
+          git fetch origin --tags
 
-          if [[ "${GITHUB_EVENT_NAME}" == "workflow_run" ]]; then
-            if [[ "${RELEASE_CONCLUSION:-}" != "success" ]]; then
-              echo "::notice::Tagging workflow finished with '${RELEASE_CONCLUSION:-unknown}' — skipping deploy."
-              write_outputs false
-              exit 0
-            fi
-            git fetch origin main --tags
-            MAIN_SHA="$(git rev-parse origin/main)"
-            candidates="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --points-at "${MAIN_SHA}")"
-            if [[ -z "${candidates}" ]]; then
-              echo "::notice::No vMAJOR.MINOR.PATCH tag on the current main tip — semantic-release did not publish a version (or main has moved). Skipping deploy."
-              write_outputs false
-              exit 0
-            fi
-            tag="$(echo "${candidates}" | sort -V | tail -1)"
-            write_outputs true "refs/tags/${tag}" "${tag}"
-            exit 0
-          fi
-
-          if [[ "${GITHUB_REF}" == refs/tags/* ]] && {
-            [[ "${GITHUB_EVENT_NAME}" == "push" ]] || [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]
-          }; then
-            tag="${GITHUB_REF_NAME}"
-            git fetch origin main
+          if [[ -n "${{ inputs.version }}" ]]; then
+            tag="${{ inputs.version }}"
             if [[ ! "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "::warning::Production tag must be vMAJOR.MINOR.PATCH (digits only, e.g. v1.0.0). Got: ${tag}"
-              write_outputs false
+              echo "::warning::Provided version must be vMAJOR.MINOR.PATCH (e.g. v1.2.3). Got: ${tag}"
+              echo "should_deploy=false" >> "${GITHUB_OUTPUT}"
               exit 0
             fi
-            if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
-              echo "::warning::Tag ${tag} does not point to a commit on main — skipping deployment."
-              write_outputs false
+            if ! git tag -l "${tag}" | grep -q .; then
+              echo "::warning::Tag ${tag} does not exist in the repository."
+              echo "should_deploy=false" >> "${GITHUB_OUTPUT}"
               exit 0
             fi
-            write_outputs true "${GITHUB_REF}" "${tag}"
-            exit 0
+          else
+            tag="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -1)"
+            if [[ -z "${tag}" ]]; then
+              echo "::warning::No vMAJOR.MINOR.PATCH tags found in the repository."
+              echo "should_deploy=false" >> "${GITHUB_OUTPUT}"
+              exit 0
+            fi
+            echo "::notice::No version specified — resolved latest tag: ${tag}"
           fi
 
-          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
-            echo "::warning::Manual production deploy must be started from a version tag. In Actions, use 'Run workflow' and set 'Use workflow from' to a tag such as v1.2.3 (not the default branch). Ref: ${GITHUB_REF}"
-            write_outputs false
-            exit 0
-          fi
-
-          echo "::warning::Unsupported event or ref for production deploy: ${GITHUB_EVENT_NAME} ${GITHUB_REF}"
-          write_outputs false
+          echo "should_deploy=true" >> "${GITHUB_OUTPUT}"
+          echo "deploy_tag=${tag}" >> "${GITHUB_OUTPUT}"
 
   deploy:
     needs: verify
@@ -105,7 +68,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.verify.outputs.deploy_ref }}
+          ref: refs/tags/${{ needs.verify.outputs.deploy_tag }}
           fetch-depth: 0
 
       - name: Deploy
