@@ -2,6 +2,8 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 
+MAINTAINER Tejas
+
 COPY package*.json ./
 RUN npm install
 
