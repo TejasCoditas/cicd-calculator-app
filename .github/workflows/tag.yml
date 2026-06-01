@@ -1,11 +1,11 @@
 name: Tagging (semantic version tag)
 
-run-name: Tagging on main ${{ github.sha }}
+run-name: Tagging on dev ${{ github.sha }}
 
 on:
   push:
     branches:
-      - main
+      - dev
 
 permissions:
   contents: write
