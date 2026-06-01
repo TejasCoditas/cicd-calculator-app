@@ -5,10 +5,7 @@ run-name: Deploy ${{ github.ref_name }}
 on:
   push:
     tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+-dev'
-      - 'v[0-9]+.[0-9]+.[0-9]+-qa'
-      - 'v[0-9]+.[0-9]+.[0-9]+-uat'
-      - 'v[0-9]+.[0-9]+.[0-9]+-staging'
+      - 'v[0-9]+.[0-9]+.[0-9]+'
   workflow_dispatch:
 
 permissions:
@@ -34,28 +31,22 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            if [[ "${{ github.ref }}" != refs/tags/* ]]; then
-              echo "::warning::Run this workflow from a tag ref (vMAJOR.MINOR.PATCH-env), not a branch. Got: ${{ github.ref_name }}"
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            if [[ "${GITHUB_REF}" != refs/tags/* ]]; then
+              echo "::warning::Run this workflow from a tag ref (vMAJOR.MINOR.PATCH), not a branch. Got: ${GITHUB_REF_NAME}"
               echo "should_deploy=false" >> "${GITHUB_OUTPUT}"
               exit 0
             fi
           fi
 
           tag="${GITHUB_REF_NAME}"
-          if [[ ! "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-(dev|qa|uat)$ ]]; then
-            echo "::warning::Non-production tag must be vMAJOR.MINOR.PATCH-dev|qa|uat (digits only, e.g. v1.0.0-dev). Got: ${tag}"
+          if [[ ! "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::warning::Non-production tag must be vMAJOR.MINOR.PATCH (digits only, e.g. v1.0.0). Got: ${tag}"
             echo "should_deploy=false" >> "${GITHUB_OUTPUT}"
             exit 0
           fi
-          branch="${BASH_REMATCH[1]}"
 
-          git fetch origin "${branch}"
-          if ! git merge-base --is-ancestor "${GITHUB_SHA}" "origin/${branch}"; then
-            echo "::warning::Tag ${tag} does not point to a commit on origin/${branch} — skipping deployment."
-            echo "should_deploy=false" >> "${GITHUB_OUTPUT}"
-            exit 0
-          fi
+
 
           echo "should_deploy=true" >> "${GITHUB_OUTPUT}"
 

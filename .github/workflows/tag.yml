@@ -6,7 +6,6 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -17,7 +16,7 @@ concurrency:
 
 jobs:
   release:
-    name: Tag 
+    name: Tag release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -33,14 +32,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Semantic tagging (dry-run)
-        if: github.event_name == 'workflow_dispatch'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx semantic-release --dry-run
-
       - name: Semantic tagging
-        if: github.event_name == 'push'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx semantic-release

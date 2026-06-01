@@ -1,17 +1,41 @@
 {
-  "branches": ["main"],
+  "branches": [
+    "dev"
+  ],
   "plugins": [
     [
       "@semantic-release/commit-analyzer",
       {
         "preset": "conventionalcommits",
         "releaseRules": [
-          { "type": "hotfix", "release": "patch" },
-          { "type": "feature", "release": "minor" },
-          { "type": "improvement", "release": "minor" },
-          { "type": "security", "release": "patch" },
-          { "type": "upgrade", "release": "minor" },
-          { "type": "tweak", "release": "patch" }
+          {
+            "type": "hotfix",
+            "release": "patch"
+          },
+          {
+            "type": "feature",
+            "release": "minor"
+          },
+          {
+            "type": "improvement",
+            "release": "minor"
+          },
+          {
+            "type": "security",
+            "release": "patch"
+          },
+          {
+            "type": "upgrade",
+            "release": "minor"
+          },
+          {
+            "type": "tweak",
+            "release": "patch"
+          },
+          {
+            "type": "release",
+            "release": "major"
+          }
         ]
       }
     ]
