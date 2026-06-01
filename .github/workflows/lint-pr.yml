@@ -12,6 +12,9 @@ on:
       - synchronize
       - reopened
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 permissions:
   pull-requests: read
 
@@ -37,5 +40,12 @@ jobs:
             build
             ci
             revert
+            release
+            hotfix
+            feature
+            improvement
+            security
+            upgrade
+            tweak
           # Allow breaking change indicator (e.g. feat!: ...)
           requireScope: false
