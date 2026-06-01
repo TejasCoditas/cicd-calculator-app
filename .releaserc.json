@@ -31,6 +31,10 @@
           {
             "type": "tweak",
             "release": "patch"
+          },
+          {
+            "type": "release",
+            "release": "major"
           }
         ]
       }

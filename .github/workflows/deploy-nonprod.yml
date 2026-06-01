@@ -46,12 +46,7 @@ jobs:
             exit 0
           fi
 
-          git fetch origin dev
-          if ! git merge-base --is-ancestor "${GITHUB_SHA}" "origin/dev"; then
-            echo "::warning::Tag ${tag} does not point to a commit on origin/dev — skipping deployment."
-            echo "should_deploy=false" >> "${GITHUB_OUTPUT}"
-            exit 0
-          fi
+
 
           echo "should_deploy=true" >> "${GITHUB_OUTPUT}"
 
